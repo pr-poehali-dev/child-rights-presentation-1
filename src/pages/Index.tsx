@@ -219,6 +219,17 @@ function SlideContent({ slide }: { slide: Slide }) {
   );
 }
 
+async function imgToBase64(url: string): Promise<string> {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 async function exportToPPTX() {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
@@ -227,6 +238,12 @@ async function exportToPPTX() {
   const accentMap: string[] = [
     "2D6A4F","1D3557","2D6A4F","5C4033","7B5EA7","D4601A","C0392B","1D3557","0077B6","2D6A4F"
   ];
+
+  const imageCache: Record<string, string> = {};
+  const uniqueImages = [...new Set(slides.map(s => s.image).filter(Boolean))] as string[];
+  for (const url of uniqueImages) {
+    try { imageCache[url] = await imgToBase64(url); } catch { /* skip */ }
+  }
 
   for (let i = 0; i < slides.length; i++) {
     const s = slides[i];
@@ -267,8 +284,8 @@ async function exportToPPTX() {
       });
     }
 
-    if (s.image) {
-      pSlide.addImage({ path: s.image, x: 7.0, y: 0, w: 5.8, h: 5.63 });
+    if (s.image && imageCache[s.image]) {
+      pSlide.addImage({ data: `image/jpeg;base64,${imageCache[s.image]}`, x: 7.0, y: 0, w: 5.8, h: 5.63 });
     }
 
     pSlide.addText(`${i + 1} / ${slides.length}`, {
@@ -281,9 +298,15 @@ async function exportToPPTX() {
 
 export default function Index() {
   const [current, setCurrent] = useState(0);
+  const [downloading, setDownloading] = useState(false);
 
   const prev = () => setCurrent((c) => Math.max(0, c - 1));
   const next = () => setCurrent((c) => Math.min(slides.length - 1, c + 1));
+
+  const handleExport = async () => {
+    setDownloading(true);
+    try { await exportToPPTX(); } finally { setDownloading(false); }
+  };
 
   const slide = slides[current];
   const isHero = current === 0 || slide.isEnd;
@@ -329,15 +352,27 @@ export default function Index() {
 
           <div className="flex gap-3">
             <button
-              onClick={exportToPPTX}
-              className="font-['Golos_Text'] text-sm px-5 py-2.5 border border-gray-300 text-gray-600 rounded hover:bg-white hover:border-gray-400 transition-all bg-white flex items-center gap-2"
+              onClick={handleExport}
+              disabled={downloading}
+              className="font-['Golos_Text'] text-sm px-5 py-2.5 border border-gray-300 text-gray-600 rounded hover:bg-white hover:border-gray-400 transition-all bg-white flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              Скачать PPTX
+              {downloading ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: "spin 1s linear infinite" }}>
+                    <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                  </svg>
+                  Готовлю файл...
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Скачать PPTX
+                </>
+              )}
             </button>
             <button
               onClick={next}
